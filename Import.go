@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"flag"
-	"fmt"
 	"github.com/lib/pq"
 	"io/ioutil"
 	"log"
@@ -36,14 +35,14 @@ func main() {
 	stopFileWalkChannel := make(chan bool, 1)
 
 	connStr := "host=" + *dbHost + " user="+ *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
-	fmt.Println(connStr)
+	log.Println(connStr)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Connection Succesfull")
+	log.Println("Connection Succesfull")
 
-	fmt.Println("Starting Import at", time.Now().Format("02-Jan-2006 15:04:05"))
+	log.Println("Starting Import at", time.Now().Format("02-Jan-2006 15:04:05"))
 	defer timeTrack(time.Now(), "Txt To Postgres")
 
 	go fileWalk(dataSource, filePathChannel, stopFileWalkChannel)
@@ -59,7 +58,7 @@ func main() {
 			log.Println("No more files to process")
 			break
 		}
-		fmt.Println("processing file: ", path)
+		log.Println("processing file: ", path)
 		go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel)
 	}
 
@@ -73,10 +72,10 @@ func main() {
 	<- stopFileWalkChannel
 	close(filePathChannel)
 
-	fmt.Println("Before reading from stopToolChannel")
+	log.Println("Before reading from stopToolChannel")
 	<-stopToolChannel
 
-	fmt.Println("Stopping tool")
+	log.Println("Stopping tool")
 }
 
 func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int) {
@@ -115,7 +114,7 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 
 			if filepath.Ext(file.Name()) == ".txt" {
 				log.Printf("reading %s, %vB", path, file.Size())
-				fmt.Println(path)
+				log.Println(path)
 				filePathChannel <- path
 			}
 			return nil
@@ -164,7 +163,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 				err = txn.Commit()
 
 				if err != nil {
-					fmt.Println("Error on split Line")
+					log.Println("Error on split Line")
 					log.Fatal(err)
 				}
 				lineCount = 0
@@ -172,7 +171,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 
 		if !more {
-			fmt.Println("NO MORE LINES")
+			log.Println("NO MORE LINES")
 			log.Printf("Commmiting %v lines", lineCount)
 			_, err = stmt.Exec()
 			if err != nil {
@@ -196,35 +195,35 @@ CREATE TABLE IF NOT EXISTS pwned (
 }
 
 func insertMD5() {
-	fmt.Println("Is MD5 32 digit")
+	log.Println("Is MD5 32 digit")
 }
 
 func insertSHA1() {
-	fmt.Println("Is SHA1 40 digit")
+	log.Println("Is SHA1 40 digit")
 }
 
 func insertSHA224() {
-	fmt.Println("Is SHA224 56 digit")
+	log.Println("Is SHA224 56 digit")
 }
 
 func insertSHA256() {
-	fmt.Println("is SHA256 64 digit")
+	log.Println("is SHA256 64 digit")
 }
 
 func insertSHA384() {
-	fmt.Println("Is SHA384 96 digit")
+	log.Println("Is SHA384 96 digit")
 }
 
 func insertSHA512() {
-	fmt.Println("IS SHA512 128 digit")
+	log.Println("IS SHA512 128 digit")
 }
 
 func insertRIPEMD160() {
-	fmt.Println("Is RIPEMD160 40 digit")
+	log.Println("Is RIPEMD160 40 digit")
 }
 
 func timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
-	fmt.Println("Finished Import at", time.Now().Format("02-Jan-2006 15:04:05"))
-	fmt.Printf("%s took %s", name, elapsed)
+	log.Println("Finished Import at", time.Now().Format("02-Jan-2006 15:04:05"))
+	log.Printf("%s took %s", name, elapsed)
 }
