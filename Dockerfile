@@ -9,6 +9,7 @@ COPY . .
 
 RUN go get github.com/lib/pq
 
+VOLUME /Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments/:/dataset
 
 RUN go build -o /go/bin/Import
 
@@ -17,3 +18,4 @@ FROM scratch
 COPY --from=builder /go/bin/Import /go/bin/Import
 
 ENTRYPOINT ["/go/bin/Import"]
+

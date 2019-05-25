@@ -16,7 +16,7 @@ import (
 
 func main() {
 	// Flags
-	dataSource := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
+	dataSource := flag.String("input", "/dataset", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
 	copySize := flag.Int("copySize", 5000, "How many rows get imported per execution [INT]")
