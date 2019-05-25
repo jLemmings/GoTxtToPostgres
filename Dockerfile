@@ -11,4 +11,3 @@ RUN go get github.com/lib/pq
 RUN go build -o /go/bin/Import
 
 ENTRYPOINT ["/go/bin/Import"]
-
