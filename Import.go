@@ -66,12 +66,12 @@ func main() {
 
 	go channelLength(lineChannel, filePathChannel)
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
+	go textToPostgres(&lineChannel, *copySize, *db, &stopToolChannel)
 
 	<- stopFileWalkChannel
 	log.Println("Closing Filepath Channel")
 	close(filePathChannel)
 
-	go textToPostgres(&lineChannel, *copySize, *db, &stopToolChannel)
 
 	for {
 		path, morePaths := <-filePathChannel
