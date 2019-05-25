@@ -16,4 +16,4 @@ FROM scratch
 
 COPY --from=builder /go/bin/Import /go/bin/Import
 
-ENTRYPOINT ["/go/bin/HelloGo"]
+ENTRYPOINT ["/go/bin/Import"]
