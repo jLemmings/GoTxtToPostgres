@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"github.com/lib/pq"
+	"gopkg.in/cheggaaa/pb.v1"
 	"io/ioutil"
 	"log"
 	"os"
@@ -15,7 +16,7 @@ import (
 
 func main() {
 	// Flags
-	dataSource := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
+	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
 	copySize := flag.Int("copySize", 2, "How many rows get imported per execution [INT]")
@@ -34,6 +35,9 @@ func main() {
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
 
+	numberOfTxtFiles := 0
+	numberOfProcessedFiles := 0
+
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
 	log.Println(connStr)
 	db, err := sql.Open("postgres", connStr)
@@ -41,64 +45,67 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Println("Connection Succesfull")
-	
+
 	log.Println("Starting Import at", time.Now().Format("02-Jan-2006 15:04:05"))
 	defer timeTrack(time.Now(), "Txt To Postgres")
 
-	go fileWalk(dataSource, filePathChannel, stopFileWalkChannel)
+	_ = filepath.Walk(*input,
+		func(path string, file os.FileInfo, err error) error {
+			if err != nil {
+				log.Fatalf("Error reading %s: %v", path, err)
+				return nil
+			}
+			if file.IsDir() {
+				return nil
+			}
+
+			if filepath.Ext(file.Name()) == ".txt" {
+				numberOfTxtFiles ++
+			}
+			return nil
+		})
+
+	bar := pb.StartNew(numberOfTxtFiles)
+
+
+	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 
 	<- stopFileWalkChannel
-	log.Println("Closing FileWalk Channel")
+	// log.Println("Closing FileWalk Channel")
 	close(filePathChannel)
 
 	go textToPostgres(&lineChannel, *copySize, *db, &stopToolChannel)
-
-	go checkChannels(lineChannel, filePathChannel, currentGoroutinesChannel, stopToolChannel, stopFileWalkChannel)
 
 	for {
 		path, morePaths := <-filePathChannel
 		if morePaths {
 			currentGoroutinesChannel <- 1
-			log.Println("More paths to process: ", morePaths)
 			if !morePaths {
 				log.Println("No more files to process")
 				break
 			}
-			log.Println("processing file: ", path)
-			go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel)
+			// log.Println("processing file: ", path)
+			go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles, *bar)
 		} else {
 			break
 		}
 	}
 
 	for {
-		log.Println("Current running goRoutines: ", len(currentGoroutinesChannel))
 		if len(currentGoroutinesChannel) == 0 {
-			log.Println("CLOSING LINE CHANNEL")
+			// log.Println("CLOSING LINE CHANNEL")
 			close(lineChannel)
 			break
 		}
 
 	}
-	log.Println("Debugging sucks")
+
 
 	<-stopToolChannel
-
-	log.Println("Stopping tool")
+	bar.FinishPrint("DONE")
 }
 
-func checkChannels(lineChannel chan string, filePathChannel chan string, currentGoR chan int, stopToolCh chan bool, stopFileWal chan bool) {
-	for {
-		time.Sleep(5 * time.Second)
-		log.Println("Line Channel: ", len(lineChannel))
-		log.Println("FilePath Channel: ", len(filePathChannel))
-		log.Println("currentGoR Channel: ", len(currentGoR))
-		log.Println("stopTool Channel: ", len(stopToolCh))
-		log.Println("stopFileWa Channel: ", len(stopFileWal))
-	}
-}
-
-func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int) {
+func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int, bar pb.ProgressBar) {
 
 	fileData, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -116,7 +123,9 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, c
 			lineChannel <- delimiters.ReplaceAllString(line, "${1}:$2")
 		}
 	}
-	log.Printf("Done reading %s", path)
+	*numberOfProcessedFiles ++
+	bar.Increment()
+	// log.Printf("Done reading %v / %v", *numberOfProcessedFiles, numberOfTxtFiles)
 	<-currentGoroutinesChannel
 
 }
@@ -133,13 +142,11 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 			}
 
 			if filepath.Ext(file.Name()) == ".txt" {
-				log.Printf("reading %s, %vB", path, file.Size())
-				log.Println(path)
+				// log.Printf("reading %s, %vB", path, file.Size())
 				filePathChannel <- path
 			}
 			return nil
 		})
-	log.Println("GOT HERE")
 
 	stopFileWalkChannel <- true
 }
@@ -171,7 +178,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 	for {
 		line, more := <-*lineChannel
-		log.Println(line, lineCount)
 
 		lineCount++
 		splitLine := strings.SplitN(line, ":", 2)
@@ -189,8 +195,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 
 		if !more {
-			log.Println("NO MORE LINES")
-			log.Printf("Commmiting %v lines", lineCount)
 
 			_, err = stmt.Exec()
 			if err != nil {
@@ -211,34 +215,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 	}
 	*stopToolChannel <- true
-}
-
-func insertMD5() {
-	log.Println("Is MD5 32 digit")
-}
-
-func insertSHA1() {
-	log.Println("Is SHA1 40 digit")
-}
-
-func insertSHA224() {
-	log.Println("Is SHA224 56 digit")
-}
-
-func insertSHA256() {
-	log.Println("is SHA256 64 digit")
-}
-
-func insertSHA384() {
-	log.Println("Is SHA384 96 digit")
-}
-
-func insertSHA512() {
-	log.Println("IS SHA512 128 digit")
-}
-
-func insertRIPEMD160() {
-	log.Println("Is RIPEMD160 40 digit")
 }
 
 func timeTrack(start time.Time, name string) {
