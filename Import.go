@@ -64,10 +64,11 @@ func main() {
 			return nil
 		})
 
+	go channelLength(lineChannel, filePathChannel)
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 
 	<- stopFileWalkChannel
-	// log.Println("Closing FileWalk Channel")
+	log.Println("Closing Filepath Channel")
 	close(filePathChannel)
 
 	go textToPostgres(&lineChannel, *copySize, *db, &stopToolChannel)
@@ -90,7 +91,7 @@ func main() {
 	for {
 		time.Sleep(5 * time.Second)
 		log.Println("CURRENT ROUTINES: ", len(currentGoroutinesChannel))
-		if len(currentGoroutinesChannel) == 0 {
+		if len(currentGoroutinesChannel) == 0 && len(lineChannel) == 0 {
 			log.Println("CLOSING LINE CHANNEL")
 			close(lineChannel)
 			break
@@ -100,6 +101,15 @@ func main() {
 
 	<-stopToolChannel
 	log.Println("DONE")
+}
+
+func channelLength(lineChannel chan string, filePathChannel chan string)  {
+	for {
+		time.Sleep(5 * time.Second)
+		log.Println("Line Channel: ", len(lineChannel))
+		log.Println("FilePath Channel: ", len(filePathChannel))
+	}
+
 }
 
 func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
@@ -210,7 +220,8 @@ CREATE TABLE IF NOT EXISTS pwned (
 			break
 		}
 	}
-	*stopToolChannel <- true
+	log.Println("FINISHED IMPORT")
+	// *stopToolChannel <- true
 }
 
 func timeTrack(start time.Time, name string) {
