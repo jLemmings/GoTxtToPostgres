@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"flag"
 	"github.com/lib/pq"
-	"gopkg.in/cheggaaa/pb.v1"
 	"io/ioutil"
 	"log"
 	"os"
@@ -29,8 +28,8 @@ func main() {
 
 	compiledRegex := regexp.MustCompile("^(.?)[" + *delimiters + "](.)$")
 
-	lineChannel := make(chan string, 20)
-	filePathChannel := make(chan string, 20)
+	lineChannel := make(chan string, 1000)
+	filePathChannel := make(chan string, 100)
 	currentGoroutinesChannel := make(chan int, *concurrency)
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
@@ -65,9 +64,6 @@ func main() {
 			return nil
 		})
 
-	bar := pb.StartNew(numberOfTxtFiles)
-
-
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 
 	<- stopFileWalkChannel
@@ -80,32 +76,33 @@ func main() {
 		path, morePaths := <-filePathChannel
 		if morePaths {
 			currentGoroutinesChannel <- 1
-			if !morePaths {
-				log.Println("No more files to process")
-				break
-			}
+
 			// log.Println("processing file: ", path)
-			go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles, *bar)
+			go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 		} else {
+			log.Println("No more files to process")
 			break
 		}
 	}
 
+	log.Println("GOT HERE")
+
 	for {
+		time.Sleep(5 * time.Second)
+		log.Println("CURRENT ROUTINES: ", len(currentGoroutinesChannel))
 		if len(currentGoroutinesChannel) == 0 {
-			// log.Println("CLOSING LINE CHANNEL")
+			log.Println("CLOSING LINE CHANNEL")
 			close(lineChannel)
 			break
 		}
 
 	}
 
-
 	<-stopToolChannel
-	bar.FinishPrint("DONE")
+	log.Println("DONE")
 }
 
-func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int, bar pb.ProgressBar) {
+func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
 
 	fileData, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -124,8 +121,7 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, c
 		}
 	}
 	*numberOfProcessedFiles ++
-	bar.Increment()
-	// log.Printf("Done reading %v / %v", *numberOfProcessedFiles, numberOfTxtFiles)
+	log.Printf("Done reading %v / %v", *numberOfProcessedFiles, numberOfTxtFiles)
 	<-currentGoroutinesChannel
 
 }
@@ -195,7 +191,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 
 		if !more {
-
+			log.Println("DONE!!!")
 			_, err = stmt.Exec()
 			if err != nil {
 				log.Fatal(err)
