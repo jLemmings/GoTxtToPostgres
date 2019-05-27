@@ -64,7 +64,6 @@ func main() {
 			return nil
 		})
 
-	go channelLength(lineChannel, filePathChannel)
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 	go textToPostgres(lineChannel, *copySize, *db, &stopToolChannel)
 
@@ -99,15 +98,6 @@ func main() {
 	}
 
 	<-stopToolChannel
-}
-
-func channelLength(lineChannel chan string, filePathChannel chan string)  {
-	for {
-		time.Sleep(5 * time.Second)
-		log.Println("Line Channel: ", len(lineChannel))
-		log.Println("FilePath Channel: ", len(filePathChannel))
-	}
-
 }
 
 func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
@@ -184,10 +174,10 @@ CREATE TABLE IF NOT EXISTS pwned (
 	for {
 		line, more := <-lineChannel
 
-		lineCount++
 		splitLine := strings.SplitN(line, ":", 2)
 
 		if len(splitLine) == 2 {
+			lineCount++
 
 			_, err = stmt.Exec(splitLine[0], splitLine[1])
 
@@ -195,6 +185,10 @@ CREATE TABLE IF NOT EXISTS pwned (
 				log.Println("error: ", splitLine[0], splitLine[1])
 				log.Println("Error on split Line")
 				log.Fatal(err)
+			}
+
+			if lineCount % 10000 == 0 {
+				log.Printf("Inserted %v lines", lineCount)
 			}
 
 		}
