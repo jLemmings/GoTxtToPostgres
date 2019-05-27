@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func main() {
@@ -178,27 +179,29 @@ CREATE TABLE IF NOT EXISTS pwned (
 		splitLine := strings.SplitN(line, ":", 2)
 
 		if len(splitLine) == 2 {
-			lineCount++
-			_, err = stmt.Exec(splitLine[0], splitLine[1])
+			if utf8.Valid([]byte(splitLine[0])) && utf8.Valid([]byte(splitLine[1])) {
+				lineCount++
+				_, err = stmt.Exec(splitLine[0], splitLine[1])
 
-			if lineCount % copySize == 0 {
-				_, err = stmt.Exec()
-				if err != nil {
-					log.Fatal(err)
+				if lineCount % copySize == 0 {
+					_, err = stmt.Exec()
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					stmt, err = txn.Prepare(pq.CopyIn("pwned", "username", "password"))
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					log.Printf("Inserted %v lines", lineCount)
+
 				}
 
-				stmt, err = txn.Prepare(pq.CopyIn("pwned", "username", "password"))
 				if err != nil {
+					log.Println("error:", splitLine[0], splitLine[1])
 					log.Fatal(err)
 				}
-
-				log.Printf("Inserted %v lines", lineCount)
-
-			}
-
-			if err != nil {
-				log.Println("error:", splitLine[0], splitLine[1])
-				log.Fatal(err)
 			}
 		}
 
