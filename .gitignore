@@ -9,6 +9,8 @@
 .classpath
 factoryConfiguration.json
 
+*.txt
+
 ### Go ###
 # Binaries for programs and plugins
 *.exe

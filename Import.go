@@ -179,14 +179,14 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 		if len(splitLine) == 2 {
 			lineCount++
-			_, err = stmt.Exec(string(splitLine[0]), string(splitLine[1]))
+			_, err = stmt.Exec(splitLine[0], splitLine[1])
 
 			if lineCount % copySize == 0 {
 				_, err = stmt.Exec()
 				if err != nil {
 					log.Fatal(err)
 				}
-			
+
 				stmt, err = txn.Prepare(pq.CopyIn("pwned", "username", "password"))
 				if err != nil {
 					log.Fatal(err)
