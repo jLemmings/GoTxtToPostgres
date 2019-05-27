@@ -184,7 +184,23 @@ CREATE TABLE IF NOT EXISTS pwned (
 				_, err = stmt.Exec(splitLine[0], splitLine[1])
 
 				if lineCount % copySize == 0 {
+
 					_, err = stmt.Exec()
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					err = stmt.Close()
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					err = txn.Commit()
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					txn, err = db.Begin()
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -193,9 +209,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 					if err != nil {
 						log.Fatal(err)
 					}
-
 					log.Printf("Inserted %v lines", lineCount)
-
 				}
 
 				if err != nil {
@@ -206,6 +220,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 
 		if !more {
+
 			_, err = stmt.Exec()
 			if err != nil {
 				log.Fatal(err)
