@@ -183,10 +183,10 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 			if err != nil {
 				log.Println("error:", splitLine[0], splitLine[1])
-				log.Fatal(err)
+				log.Println(err)
 			}
 
-			if lineCount % 10000 == 0 {
+			if lineCount % 1000000 == 0 {
 				log.Printf("Inserted %v lines", lineCount)
 			}
 
@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 			if err != nil {
 				log.Fatal(err)
 			}
-
+			log.Printf("Inserted %v lines", lineCount)
 			break
 		}
 	}
