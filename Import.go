@@ -84,7 +84,6 @@ func main() {
 		}
 
 	}
-
 	<-stopToolChannel
 }
 
@@ -180,11 +179,10 @@ CREATE TABLE IF NOT EXISTS pwned (
 		if len(splitLine) == 2 {
 			lineCount++
 
-			_, err = stmt.Exec(splitLine[0], splitLine[1])
+			_, err = stmt.Exec(string(splitLine[0]), string(splitLine[1]))
 
 			if err != nil {
-				log.Println("error: ", splitLine[0], splitLine[1])
-				log.Println("Error on split Line")
+				log.Println("error:", splitLine[0], splitLine[1])
 				log.Fatal(err)
 			}
 
