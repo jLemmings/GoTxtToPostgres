@@ -18,7 +18,7 @@ func main() {
 	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
-	copySize := flag.Int("copySize", 2, "How many rows get imported per execution [INT]")
+	copySize := flag.Int("copySize", 100, "How many rows get imported per execution [INT]")
 	dbUser := flag.String("dbUser", "pwned", "define DB username")
 	dbName := flag.String("dbName", "pwned", "define DB name")
 	// dbTable := flag.String("dbTable", "", "define DB table")
@@ -66,7 +66,7 @@ func main() {
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 	go textToPostgres(lineChannel, *copySize, *db, &stopToolChannel)
-	go readFileStarter(compiledRegex, filePathChannel, &lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
+	go readFileStarter(compiledRegex, filePathChannel, &lineChannel, &currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 
 	log.Println("Waiting to close Filepath Channel")
 	<- stopFileWalkChannel
@@ -82,22 +82,22 @@ func main() {
 			close(lineChannel)
 			break
 		}
-
 	}
 	<-stopToolChannel
 }
 
-func readFileStarter(delimiters *regexp.Regexp, filePathChannel chan string, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int)  {
+func readFileStarter(delimiters *regexp.Regexp, filePathChannel chan string, lineChannel *chan string, currentGoroutinesChannel *chan int, numberOfTxtFiles int, numberOfProcessedFiles *int)  {
 	for {
 		path, morePaths := <-filePathChannel
 		if morePaths {
-			currentGoroutinesChannel <- 1
-			go readFile(path, delimiters, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, numberOfProcessedFiles)
+			*currentGoroutinesChannel <- 1
+			go readFile(path, delimiters, lineChannel, *currentGoroutinesChannel, numberOfTxtFiles, numberOfProcessedFiles)
 		} else {
 			log.Println("No more files to process")
 			break
 		}
 	}
+
 }
 
 func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
@@ -111,6 +111,7 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, 
 	fileData = nil
 	lines := strings.Split(fileAsString, "\n")
 	fileAsString = ""
+
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -181,6 +182,10 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 			_, err = stmt.Exec(string(splitLine[0]), string(splitLine[1]))
 
+			if lineCount % copySize == 0 {
+
+			}
+
 			if err != nil {
 				log.Println("error:", splitLine[0], splitLine[1])
 				log.Println(err)
@@ -189,7 +194,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 			if lineCount % 1000000 == 0 {
 				log.Printf("Inserted %v lines", lineCount)
 			}
-
 		}
 
 		if !more {
