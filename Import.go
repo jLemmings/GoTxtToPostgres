@@ -26,7 +26,7 @@ func main() {
 	dbHost := flag.String("dbHost", "192.168.178.206", "define DB host")
 	flag.Parse()
 
-	compiledRegex := regexp.MustCompile("^(.?)[" + *delimiters + "](.)$")
+	compiledRegex := regexp.MustCompile("^(.*?)["+ *delimiters +"](.*)$")
 
 	lineChannel := make(chan string, 1000)
 	filePathChannel := make(chan string, 100)
@@ -66,8 +66,9 @@ func main() {
 
 	go channelLength(lineChannel, filePathChannel)
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
-	go textToPostgres(&lineChannel, *copySize, *db, &stopToolChannel)
+	go textToPostgres(lineChannel, *copySize, *db, &stopToolChannel)
 
+	log.Println("Waiting to close Filepath Channel")
 	<- stopFileWalkChannel
 	log.Println("Closing Filepath Channel")
 	close(filePathChannel)
@@ -79,14 +80,12 @@ func main() {
 			currentGoroutinesChannel <- 1
 
 			// log.Println("processing file: ", path)
-			go readFile(path, compiledRegex, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
+			go readFile(path, compiledRegex, &lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 		} else {
 			log.Println("No more files to process")
 			break
 		}
 	}
-
-	log.Println("GOT HERE")
 
 	for {
 		time.Sleep(5 * time.Second)
@@ -100,7 +99,6 @@ func main() {
 	}
 
 	<-stopToolChannel
-	log.Println("DONE")
 }
 
 func channelLength(lineChannel chan string, filePathChannel chan string)  {
@@ -112,7 +110,7 @@ func channelLength(lineChannel chan string, filePathChannel chan string)  {
 
 }
 
-func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
+func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
 
 	fileData, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -127,7 +125,8 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel chan string, c
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			lineChannel <- delimiters.ReplaceAllString(line, "${1}:$2")
+			insert := delimiters.ReplaceAllString(line, "${1}:$2")
+			*lineChannel <- insert
 		}
 	}
 	*numberOfProcessedFiles ++
@@ -157,7 +156,7 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 	stopFileWalkChannel <- true
 }
 
-func textToPostgres(lineChannel *chan string, copySize int, db sql.DB, stopToolChannel *chan bool) {
+func textToPostgres(lineChannel chan string, copySize int, db sql.DB, stopToolChannel *chan bool) {
 
 	const query = `
 CREATE TABLE IF NOT EXISTS pwned (
@@ -183,7 +182,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 	}
 
 	for {
-		line, more := <-*lineChannel
+		line, more := <-lineChannel
 
 		lineCount++
 		splitLine := strings.SplitN(line, ":", 2)
@@ -201,7 +200,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 		}
 
 		if !more {
-			log.Println("DONE!!!")
 			_, err = stmt.Exec()
 			if err != nil {
 				log.Fatal(err)
@@ -220,8 +218,8 @@ CREATE TABLE IF NOT EXISTS pwned (
 			break
 		}
 	}
-	log.Println("FINISHED IMPORT")
-	// *stopToolChannel <- true
+	log.Printf("DONE, IMPORTED %v FILES", lineCount)
+	*stopToolChannel <- true
 }
 
 func timeTrack(start time.Time, name string) {
