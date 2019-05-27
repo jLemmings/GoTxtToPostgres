@@ -27,7 +27,7 @@ func main() {
 	dbHost := flag.String("dbHost", "192.168.178.206", "define DB host")
 	flag.Parse()
 
-	compiledRegex := regexp.MustCompile("^(.*?)["+ *delimiters +"](.*)$")
+	compiledRegex := regexp.MustCompile("^(.*?)[" + *delimiters + "](.*)$")
 
 	lineChannel := make(chan string, 1000)
 	filePathChannel := make(chan string, 100)
@@ -60,7 +60,7 @@ func main() {
 			}
 
 			if filepath.Ext(file.Name()) == ".txt" {
-				numberOfTxtFiles ++
+				numberOfTxtFiles++
 			}
 			return nil
 		})
@@ -70,7 +70,7 @@ func main() {
 	go readFileStarter(compiledRegex, filePathChannel, &lineChannel, &currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 
 	log.Println("Waiting to close Filepath Channel")
-	<- stopFileWalkChannel
+	<-stopFileWalkChannel
 	log.Println("Closing Filepath Channel")
 	close(filePathChannel)
 
@@ -87,7 +87,7 @@ func main() {
 	<-stopToolChannel
 }
 
-func readFileStarter(delimiters *regexp.Regexp, filePathChannel chan string, lineChannel *chan string, currentGoroutinesChannel *chan int, numberOfTxtFiles int, numberOfProcessedFiles *int)  {
+func readFileStarter(delimiters *regexp.Regexp, filePathChannel chan string, lineChannel *chan string, currentGoroutinesChannel *chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
 	for {
 		path, morePaths := <-filePathChannel
 		if morePaths {
@@ -113,7 +113,6 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, 
 	lines := strings.Split(fileAsString, "\n")
 	fileAsString = ""
 
-
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
@@ -122,7 +121,7 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, 
 		}
 	}
 	*numberOfProcessedFiles ++
-	log.Printf("Done reading %v / %v", *numberOfProcessedFiles, numberOfTxtFiles)
+	log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 	<-currentGoroutinesChannel
 
 }
@@ -183,7 +182,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 				lineCount++
 				_, err = stmt.Exec(splitLine[0], splitLine[1])
 
-				if lineCount % copySize == 0 {
+				if lineCount%copySize == 0 {
 
 					_, err = stmt.Exec()
 					if err != nil {
@@ -209,7 +208,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 					if err != nil {
 						log.Fatal(err)
 					}
-					log.Printf("Inserted %v lines", lineCount)
+					// log.Printf("Inserted %v lines", lineCount)
 				}
 
 				if err != nil {
@@ -239,7 +238,6 @@ CREATE TABLE IF NOT EXISTS pwned (
 			break
 		}
 	}
-	log.Printf("DONE, IMPORTED %v FILES", lineCount)
 	*stopToolChannel <- true
 }
 
