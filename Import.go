@@ -66,29 +66,17 @@ func main() {
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 	go textToPostgres(lineChannel, *copySize, *db, &stopToolChannel)
+	go readFileStarter(compiledRegex, filePathChannel, &lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 
 	log.Println("Waiting to close Filepath Channel")
 	<- stopFileWalkChannel
 	log.Println("Closing Filepath Channel")
 	close(filePathChannel)
 
-
 	for {
-		path, morePaths := <-filePathChannel
-		if morePaths {
-			currentGoroutinesChannel <- 1
+		// If I remove this line it stops working
+		time.Sleep(1 * time.Second)
 
-			// log.Println("processing file: ", path)
-			go readFile(path, compiledRegex, &lineChannel, currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
-		} else {
-			log.Println("No more files to process")
-			break
-		}
-	}
-
-	for {
-		time.Sleep(5 * time.Second)
-		log.Println("CURRENT ROUTINES: ", len(currentGoroutinesChannel))
 		if len(currentGoroutinesChannel) == 0 && len(lineChannel) == 0 {
 			log.Println("CLOSING LINE CHANNEL")
 			close(lineChannel)
@@ -98,6 +86,19 @@ func main() {
 	}
 
 	<-stopToolChannel
+}
+
+func readFileStarter(delimiters *regexp.Regexp, filePathChannel chan string, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int)  {
+	for {
+		path, morePaths := <-filePathChannel
+		if morePaths {
+			currentGoroutinesChannel <- 1
+			go readFile(path, delimiters, lineChannel, currentGoroutinesChannel, numberOfTxtFiles, numberOfProcessedFiles)
+		} else {
+			log.Println("No more files to process")
+			break
+		}
+	}
 }
 
 func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, currentGoroutinesChannel chan int, numberOfTxtFiles int, numberOfProcessedFiles *int) {
