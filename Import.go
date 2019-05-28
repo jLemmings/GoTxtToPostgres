@@ -16,7 +16,7 @@ import (
 
 func main() {
 	// Flags
-	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
+	input := flag.String("input", "", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
 	copySize := flag.Int("copySize", 100, "How many rows get imported per execution [INT]")
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 		log.Fatal("Failed to create table if exists")
 	}
 
-	lineCount := 0
+	var lineCount int64 = 0
 
 	txn, err := db.Begin()
 	if err != nil {
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 				lineCount++
 				_, err = stmt.Exec(splitLine[0], splitLine[1])
 
-				if lineCount%copySize == 0 {
+				if lineCount%int64(copySize) == 0 {
 
 					_, err = stmt.Exec()
 					if err != nil {
@@ -206,8 +206,13 @@ CREATE TABLE IF NOT EXISTS pwned (
 					if err != nil {
 						log.Fatal("failed at txn.Prepare", err)
 					}
-					log.Printf("Inserted %v lines", lineCount)
+
+					if lineCount%int64(copySize) * 10 == 0 {
+						log.Printf("Inserted %v lines", lineCount)
+					}
 				}
+
+
 
 				if err != nil {
 					log.Println("error:", splitLine[0], splitLine[1])
