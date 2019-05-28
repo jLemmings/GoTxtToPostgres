@@ -66,7 +66,7 @@ func main() {
 		})
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
-	go textToPostgres(lineChannel, *copySize, *db, &stopToolChannel)
+	go textToPostgres(lineChannel, *copySize, db, stopToolChannel)
 	go readFileStarter(compiledRegex, filePathChannel, &lineChannel, &currentGoroutinesChannel, numberOfTxtFiles, &numberOfProcessedFiles)
 
 	log.Println("Waiting to close Filepath Channel")
@@ -147,7 +147,7 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 	stopFileWalkChannel <- true
 }
 
-func textToPostgres(lineChannel chan string, copySize int, db sql.DB, stopToolChannel *chan bool) {
+func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolChannel chan bool) {
 
 	const query = `
 CREATE TABLE IF NOT EXISTS pwned (
@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 			break
 		}
 	}
-	*stopToolChannel <- true
+	stopToolChannel <- true
 }
 
 func timeTrack(start time.Time, name string) {
