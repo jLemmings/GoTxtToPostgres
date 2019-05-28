@@ -11,4 +11,6 @@ RUN go get 	gopkg.in/cheggaaa/pb.v1
 
 RUN go build -o /go/bin/Import
 
+EXPOSE 8080/tcp
+
 ENTRYPOINT ["/go/bin/Import"]
