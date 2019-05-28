@@ -6,6 +6,7 @@ import (
 	"github.com/lib/pq"
 	"io/ioutil"
 	"log"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -207,13 +208,11 @@ CREATE TABLE IF NOT EXISTS pwned (
 						log.Fatal("failed at txn.Prepare", err)
 					}
 
-					if lineCount%int64(copySize) * 10 == 0 {
+					if lineCount%(int64(copySize) * 10) == 0 {
 						log.Printf("Inserted %v lines", lineCount)
 					}
 				}
-
-
-
+				
 				if err != nil {
 					log.Println("error:", splitLine[0], splitLine[1])
 					log.Fatal(err)
