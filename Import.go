@@ -184,29 +184,29 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 					_, err = stmt.Exec()
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal("Failed at stmt.Exec", err)
 					}
 
 					err = stmt.Close()
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal("Failed at stmt.Close", err)
 					}
 
 					err = txn.Commit()
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal("failed at txn.Commit", err)
 					}
 
 					txn, err = db.Begin()
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal("failed at db.Begin", err)
 					}
 
 					stmt, err = txn.Prepare(pq.CopyIn("pwned", "username", "password"))
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal("failed at txn.Prepare", err)
 					}
-					// log.Printf("Inserted %v lines", lineCount)
+					log.Printf("Inserted %v lines", lineCount)
 				}
 
 				if err != nil {
@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 
 			err = txn.Commit()
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			log.Printf("Inserted %v lines", lineCount)
 			break
