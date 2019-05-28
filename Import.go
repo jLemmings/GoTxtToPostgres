@@ -109,9 +109,7 @@ func readFile(path string, delimiters *regexp.Regexp, lineChannel *chan string, 
 		return
 	}
 	fileAsString := string(fileData)
-	fileData = nil
 	lines := strings.Split(fileAsString, "\n")
-	fileAsString = ""
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
