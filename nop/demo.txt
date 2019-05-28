@@ -1,4 +1,0 @@
-lul@pass.ch:123
-lul@pass.ch;123
-lul@pass.ch|123
-lul@pass.ch/123
