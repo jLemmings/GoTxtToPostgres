@@ -41,7 +41,7 @@ func main() {
 	numberOfProcessedFiles := 0
 
 	go func() {
-		log.Println(http.ListenAndServe("localhost:8080", nil))
+		log.Println(http.ListenAndServe("localhost:8081", nil))
 	}()
 
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
