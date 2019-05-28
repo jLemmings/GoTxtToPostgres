@@ -40,7 +40,7 @@ func main() {
 	numberOfTxtFiles := 0
 	numberOfProcessedFiles := 0
 
-	log.Println(http.ListenAndServe("localhost:6060", nil))
+	http.ListenAndServe("localhost:6060", nil)
 
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
 	log.Println(connStr)
