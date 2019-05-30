@@ -91,11 +91,10 @@ func main() {
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
 	go textToPostgres(lineChannel, *copySize, db, stopToolChannel)
 
-	for i:= 0; i<*concurrency; i++ {
+	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, wg)
 	}
-
 
 	log.Println("Waiting to close Filepath Channel")
 	<-stopFileWalkChannel
@@ -110,32 +109,33 @@ func main() {
 	<-stopToolChannel
 }
 
-
 func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChannel chan string, numberOfTxtFiles int, numberOfProcessedFiles *int, wg sync.WaitGroup) {
-	path, morePaths := <- filePathChannel
+	for {
+		path, morePaths := <-filePathChannel
 
-	if morePaths {
-		fileData, err := ioutil.ReadFile(path)
-		if err != nil {
-			log.Fatalf("Cannot read file %s", path)
-			return
-		}
-		fileAsString := string(fileData)
-		lines := strings.Split(fileAsString, "\n")
-
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				insert := delimiters.ReplaceAllString(line, "${1}:$2")
-				lineChannel <- insert
+		if morePaths {
+			fileData, err := ioutil.ReadFile(path)
+			if err != nil {
+				log.Fatalf("Cannot read file %s", path)
+				return
 			}
-		}
+			fileAsString := string(fileData)
+			lines := strings.Split(fileAsString, "\n")
 
-		*numberOfProcessedFiles ++
-		log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
-	} else {
-		log.Println("No more files to process")
-		wg.Done()
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					insert := delimiters.ReplaceAllString(line, "${1}:$2")
+					lineChannel <- insert
+				}
+			}
+
+			*numberOfProcessedFiles ++
+			log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
+		} else {
+			log.Println("No more files to process")
+			wg.Done()
+		}
 	}
 }
 
@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS pwned (
 						log.Fatal("failed at txn.Prepare", err)
 					}
 
-					if lineCount%(int64(copySize) * 10) == 0 {
+					if lineCount%(int64(copySize)*10) == 0 {
 						log.Printf("Inserted %v lines", lineCount)
 					}
 				}
