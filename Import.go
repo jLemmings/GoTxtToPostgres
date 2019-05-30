@@ -130,6 +130,7 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 				lineChannel <- insert
 			}
 		}
+
 		*numberOfProcessedFiles ++
 		log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 	} else {
