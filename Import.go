@@ -36,7 +36,7 @@ func main() {
 	var wg = sync.WaitGroup{}
 
 	lineChannel := make(chan string, 1000)
-	filePathChannel := make(chan string, 100)
+	filePathChannel := make(chan string, *concurrency*2)
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
 
@@ -57,6 +57,7 @@ func main() {
 		router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
 		router.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
 		router.Handle("/debug/pprof/block", pprof.Handler("block"))
+		router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
 		http.ListenAndServe(":80", router)
 	}()
 
@@ -133,6 +134,7 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 		*numberOfProcessedFiles ++
 		log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 	} else {
+		log.Println("No more files to process")
 		wg.Done()
 	}
 }
