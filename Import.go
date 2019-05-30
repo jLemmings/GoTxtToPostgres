@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"net/http/pprof"
-	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -94,8 +93,8 @@ func main() {
 	for i:= 0; i<*concurrency; i++ {
 		wg.Add(1)
 		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, wg)
-		log.Println("Started Filereader")
 	}
+
 
 	log.Println("Waiting to close Filepath Channel")
 	<-stopFileWalkChannel
@@ -134,7 +133,6 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 		*numberOfProcessedFiles ++
 		log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 	} else {
-		log.Println("Closing File Reader")
 		wg.Done()
 	}
 }
