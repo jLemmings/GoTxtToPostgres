@@ -12,6 +12,6 @@ RUN go get github.com/google/pprof
 
 RUN go build -o /go/bin/Import
 
-EXPOSE 8080/tcp
+EXPOSE 80/tcp
 
 ENTRYPOINT ["/go/bin/Import"]

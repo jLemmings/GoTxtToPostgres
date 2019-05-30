@@ -3,10 +3,12 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"github.com/gorilla/mux"
 	"github.com/lib/pq"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
@@ -22,7 +24,7 @@ func main() {
 	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
-	copySize := flag.Int("copySize", 10000, "How many rows get imported per execution [INT]")
+	copySize := flag.Int("copySize", 100, "How many rows get imported per execution [INT]")
 	dbUser := flag.String("dbUser", "pwned", "define DB username")
 	dbName := flag.String("dbName", "pwned", "define DB name")
 	// dbTable := flag.String("dbTable", "", "define DB table")
@@ -43,7 +45,20 @@ func main() {
 	numberOfProcessedFiles := 0
 
 	go func() {
-		log.Println(http.ListenAndServe("localhost:8081", nil))
+		// Create a new router
+		router := mux.NewRouter()
+
+		// Register pprof handlers
+		router.HandleFunc("/debug/pprof/", pprof.Index)
+		router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+
+		router.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		router.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+		router.Handle("/debug/pprof/block", pprof.Handler("block"))
+		http.ListenAndServe(":80", router)
 	}()
 
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
@@ -79,6 +94,7 @@ func main() {
 	for i:= 0; i<*concurrency; i++ {
 		wg.Add(1)
 		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, wg)
+		log.Println("Started Filereader")
 	}
 
 	log.Println("Waiting to close Filepath Channel")
@@ -97,8 +113,6 @@ func main() {
 
 func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChannel chan string, numberOfTxtFiles int, numberOfProcessedFiles *int, wg sync.WaitGroup) {
 	path, morePaths := <- filePathChannel
-
-	log.Printf("")
 
 	if morePaths {
 		fileData, err := ioutil.ReadFile(path)
@@ -119,6 +133,7 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 		*numberOfProcessedFiles ++
 		log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 	} else {
+		log.Println("Closing File Reader")
 		wg.Done()
 	}
 }
