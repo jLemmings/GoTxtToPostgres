@@ -45,7 +45,7 @@ func main() {
 	var wg = sync.WaitGroup{}
 
 	lineChannel := make(chan string, 1000)
-	filePathChannel := make(chan string, *concurrency*2)
+	filePathChannel := make(chan string, *concurrency*4)
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
 
@@ -161,10 +161,8 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 			}
 
 			if filepath.Ext(file.Name()) == ".txt" {
-				log.Printf("reading %s, %vB", path, file.Size())
-				log.Println("FilepathChannel BEFORE INSERT Size:", len(filePathChannel))
+				// log.Printf("reading %s, %vB", path, file.Size())
 				filePathChannel <- path
-				log.Println("FilepathChannel AFTER INSERT Size:", len(filePathChannel))
 			}
 			return nil
 		})
