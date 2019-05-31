@@ -23,7 +23,7 @@ func main() {
 	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
-	copySize := flag.Int("copySize", 100, "How many rows get imported per execution [INT]")
+	copySize := flag.Int("copySize", 10000, "How many rows get imported per execution [INT]")
 	dbUser := flag.String("dbUser", "pwned", "define DB username")
 	dbName := flag.String("dbName", "pwned", "define DB name")
 	// dbTable := flag.String("dbTable", "", "define DB table")
@@ -32,6 +32,15 @@ func main() {
 	flag.Parse()
 
 	compiledRegex := regexp.MustCompile("^(.*?)[" + *delimiters + "](.*)$")
+
+	md5Regex := regexp.MustCompile("^[a-f0-9]{32}$")
+	sha1Regex := regexp.MustCompile("\b[0-9a-f]{5,40}\b")
+
+	var hashesMap map[string]*regexp.Regexp
+	hashesMap = make(map[string]*regexp.Regexp)
+
+	hashesMap["MD5"] = md5Regex
+	hashesMap["SHA1"] = sha1Regex
 
 	var wg = sync.WaitGroup{}
 
@@ -43,6 +52,7 @@ func main() {
 	numberOfTxtFiles := 0
 	numberOfProcessedFiles := 0
 
+	// TODO: Remove for stable version
 	go func() {
 		// Create a new router
 		router := mux.NewRouter()
@@ -58,16 +68,15 @@ func main() {
 		router.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
 		router.Handle("/debug/pprof/block", pprof.Handler("block"))
 		router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
-		http.ListenAndServe(":80", router)
+		log.Fatal(http.ListenAndServe(":80", router))
 	}()
 
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
-	log.Println(connStr)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Connection Succesfull")
+	checkConnectionAndCreateTables(db)
 
 	log.Println("Starting Import at", time.Now().Format("02-Jan-2006 15:04:05"))
 	defer timeTrack(time.Now(), "Txt To Postgres")
@@ -89,11 +98,11 @@ func main() {
 		})
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
-	go textToPostgres(lineChannel, *copySize, db, stopToolChannel)
+	go textToPostgres(lineChannel, *copySize, db, stopToolChannel, hashesMap)
 
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
-		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, wg)
+		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, &wg)
 	}
 
 	log.Println("Waiting to close Filepath Channel")
@@ -109,10 +118,10 @@ func main() {
 	<-stopToolChannel
 }
 
-func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChannel chan string, numberOfTxtFiles int, numberOfProcessedFiles *int, wg sync.WaitGroup) {
+func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChannel chan string, numberOfTxtFiles int, numberOfProcessedFiles *int, wg *sync.WaitGroup) {
 	for {
+		time.Sleep(5 * time.Second)
 		path, morePaths := <-filePathChannel
-
 		if morePaths {
 			fileData, err := ioutil.ReadFile(path)
 			if err != nil {
@@ -130,13 +139,14 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 				}
 			}
 
-			*numberOfProcessedFiles ++
+			*numberOfProcessedFiles++
 			log.Printf("Read %v / %v Files", *numberOfProcessedFiles, numberOfTxtFiles)
 		} else {
-			log.Println("No more files to process")
-			wg.Done()
+			log.Println("Closing readFile Goroutine")
+			break
 		}
 	}
+	wg.Done()
 }
 
 func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChannel chan bool) {
@@ -151,36 +161,42 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 			}
 
 			if filepath.Ext(file.Name()) == ".txt" {
-				// log.Printf("reading %s, %vB", path, file.Size())
+				log.Printf("reading %s, %vB", path, file.Size())
+				log.Println("FilepathChannel BEFORE INSERT Size:", len(filePathChannel))
 				filePathChannel <- path
+				log.Println("FilepathChannel AFTER INSERT Size:", len(filePathChannel))
 			}
 			return nil
 		})
 
+	log.Println("stop file walk channel")
 	stopFileWalkChannel <- true
 }
 
-func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolChannel chan bool) {
+func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolChannel chan bool, hashesMap map[string]*regexp.Regexp) {
 
-	const query = `
-CREATE TABLE IF NOT EXISTS pwned (
-	username varchar(300),
-	password varchar(300)
-)`
-
-	_, err := db.Exec(query)
-	if err != nil {
-		log.Fatal("Failed to create table if exists")
-	}
-
+	log.Println("Started Text to postgres goroutine")
 	var lineCount int64 = 0
 
-	txn, err := db.Begin()
+	txnClear, err := db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn("pwned", "username", "password"))
+	txnMD5, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	txnSHA1, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	clearStatement, err := txnClear.Prepare(pq.CopyIn("clear", "username", "password"))
+	md5Statement, err := txnMD5.Prepare(pq.CopyIn("md5", "username", "password"))
+	sha1Statement, err := txnSHA1.Prepare(pq.CopyIn("sha1", "username", "password"))
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -191,33 +207,37 @@ CREATE TABLE IF NOT EXISTS pwned (
 		splitLine := strings.SplitN(line, ":", 2)
 
 		if len(splitLine) == 2 {
-			if utf8.Valid([]byte(splitLine[0])) && utf8.Valid([]byte(splitLine[1])) {
+
+			username := string(splitLine[0])
+			password := string(splitLine[1])
+
+			if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) && hashesMap["MD5"].Match([]byte(password)) {
 				lineCount++
-				_, err = stmt.Exec(splitLine[0], splitLine[1])
+				_, err = md5Statement.Exec(username, password)
 
 				if lineCount%int64(copySize) == 0 {
 
-					_, err = stmt.Exec()
+					_, err = clearStatement.Exec()
 					if err != nil {
 						log.Fatal("Failed at stmt.Exec", err)
 					}
 
-					err = stmt.Close()
+					err = md5Statement.Close()
 					if err != nil {
 						log.Fatal("Failed at stmt.Close", err)
 					}
 
-					err = txn.Commit()
+					err = txnMD5.Commit()
 					if err != nil {
 						log.Fatal("failed at txn.Commit", err)
 					}
 
-					txn, err = db.Begin()
+					txnMD5, err = db.Begin()
 					if err != nil {
 						log.Fatal("failed at db.Begin", err)
 					}
 
-					stmt, err = txn.Prepare(pq.CopyIn("pwned", "username", "password"))
+					md5Statement, err = txnMD5.Prepare(pq.CopyIn("md5", "username", "password"))
 					if err != nil {
 						log.Fatal("failed at txn.Prepare", err)
 					}
@@ -233,29 +253,175 @@ CREATE TABLE IF NOT EXISTS pwned (
 					log.Println("error:", splitLine[0], splitLine[1])
 					log.Fatal(err)
 				}
+
+			} else if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) && hashesMap["SHA1"].Match([]byte(password)) {
+				lineCount++
+				_, err = sha1Statement.Exec(username, password)
+
+				if lineCount%int64(copySize) == 0 {
+
+					_, err = sha1Statement.Exec()
+					if err != nil {
+						log.Fatal("Failed at stmt.Exec", err)
+					}
+
+					err = sha1Statement.Close()
+					if err != nil {
+						log.Fatal("Failed at stmt.Close", err)
+					}
+
+					err = txnSHA1.Commit()
+					if err != nil {
+						log.Fatal("failed at txn.Commit", err)
+					}
+
+					txnSHA1, err = db.Begin()
+					if err != nil {
+						log.Fatal("failed at db.Begin", err)
+					}
+
+					sha1Statement, err = txnSHA1.Prepare(pq.CopyIn("sha1", "username", "password"))
+					if err != nil {
+						log.Fatal("failed at txn.Prepare", err)
+					}
+
+					if lineCount%(int64(copySize)*10) == 0 {
+						log.Printf("Inserted %v lines", lineCount)
+					}
+				}
+
+				if err != nil {
+					log.Print([]byte(line))
+					log.Println(line)
+					log.Println("error:", splitLine[0], splitLine[1])
+					log.Fatal(err)
+				}
+
+			} else if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) {
+				lineCount++
+				_, err = clearStatement.Exec(username, password)
+
+				if lineCount%int64(copySize) == 0 {
+
+					_, err = clearStatement.Exec()
+					if err != nil {
+						log.Fatal("Failed at stmt.Exec", err)
+					}
+
+					err = clearStatement.Close()
+					if err != nil {
+						log.Fatal("Failed at stmt.Close", err)
+					}
+
+					err = txnClear.Commit()
+					if err != nil {
+						log.Fatal("failed at txn.Commit", err)
+					}
+
+					txnClear, err = db.Begin()
+					if err != nil {
+						log.Fatal("failed at db.Begin", err)
+					}
+
+					clearStatement, err = txnClear.Prepare(pq.CopyIn("clear", "username", "password"))
+					if err != nil {
+						log.Fatal("failed at txn.Prepare", err)
+					}
+
+					if lineCount%(int64(copySize)*10) == 0 {
+						log.Printf("Inserted %v lines", lineCount)
+					}
+				}
+
+				if err != nil {
+					log.Print([]byte(line))
+					log.Println(line)
+					log.Println("error:", splitLine[0], splitLine[1])
+					log.Fatal(err)
+				}
+			} else {
+				log.Println("WELL FUCK")
 			}
+
 		}
 
 		if !more {
-			_, err = stmt.Exec()
+			_, err = clearStatement.Exec()
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			err = stmt.Close()
+			err = clearStatement.Close()
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			err = txn.Commit()
+			err = txnClear.Commit()
 			if err != nil {
 				log.Println(err)
 			}
+
+			_, err = md5Statement.Exec()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = md5Statement.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = txnMD5.Commit()
+			if err != nil {
+				log.Println(err)
+			}
+
+			_, err = sha1Statement.Exec()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = sha1Statement.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = txnSHA1.Commit()
+			if err != nil {
+				log.Println(err)
+			}
+
 			log.Printf("Inserted %v lines", lineCount)
 			break
 		}
 	}
 	stopToolChannel <- true
+}
+
+func checkConnectionAndCreateTables(db *sql.DB) {
+	const queryClear = `CREATE TABLE IF NOT EXISTS clear (username varchar, password varchar)`
+	const queryMD5 = `CREATE TABLE IF NOT EXISTS md5 (username varchar, password varchar)`
+	const querySHA1 = `CREATE TABLE IF NOT EXISTS sha1 (username varchar, password varchar)`
+
+	var version string
+	serverVersion := db.QueryRow("SHOW server_version").Scan(&version)
+	if serverVersion != nil {
+		log.Fatal(serverVersion)
+	}
+	log.Println("Connected to:", version)
+
+	_, errClear := db.Exec(queryClear)
+	if errClear != nil {
+		log.Fatal("Failed to create table if exists")
+	}
+	_, errMD5 := db.Exec(queryMD5)
+	if errMD5 != nil {
+		log.Fatal("Failed to create table if exists")
+	}
+	_, errSHA1 := db.Exec(querySHA1)
+	if errSHA1 != nil {
+		log.Fatal("Failed to create table if exists")
+	}
 }
 
 func timeTrack(start time.Time, name string) {
