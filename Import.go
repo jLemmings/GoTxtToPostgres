@@ -23,7 +23,7 @@ func main() {
 	input := flag.String("input", "/Users/joshuahemmings/Documents/Dev/Personal/GoTxtToPostgres/testDocuments", "Data to Import [STRING]")
 	delimiters := flag.String("delimiters", ";:|", "delimiters list [STRING]")
 	concurrency := flag.Int("concurrency", 10, "Concurrency (amount of GoRoutines) [INT]")
-	copySize := flag.Int("copySize", 10000, "How many rows get imported per execution [INT]")
+	copySize := flag.Int("copySize", 2, "How many rows get imported per execution [INT]")
 	dbUser := flag.String("dbUser", "pwned", "define DB username")
 	dbName := flag.String("dbName", "pwned", "define DB name")
 	// dbTable := flag.String("dbTable", "", "define DB table")
@@ -191,9 +191,23 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 		log.Fatal(err)
 	}
 
+	var txnMap map[string]*sql.Tx
+	txnMap = make(map[string]*sql.Tx)
+
+	txnMap["clear"] = txnClear
+	txnMap["md5"] = txnMD5
+	txnMap["sha1"] = txnSHA1
+
 	clearStatement, err := txnClear.Prepare(pq.CopyIn("clear", "username", "password"))
 	md5Statement, err := txnMD5.Prepare(pq.CopyIn("md5", "username", "password"))
 	sha1Statement, err := txnSHA1.Prepare(pq.CopyIn("sha1", "username", "password"))
+
+	var stmtMap map[string]*sql.Stmt
+	stmtMap = make(map[string]*sql.Stmt)
+
+	stmtMap["clear"] = clearStatement
+	stmtMap["md5"] = md5Statement
+	stmtMap["sha1"] = sha1Statement
 
 	if err != nil {
 		log.Fatal(err)
@@ -204,196 +218,89 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 		strings.Replace(line, "\u0000", "", -1)
 		splitLine := strings.SplitN(line, ":", 2)
 
-		if len(splitLine) == 2 {
+		log.Println("GOT HERE")
+
+
+		if len(splitLine) == 2 && utf8.ValidString(splitLine[0]) && utf8.ValidString(splitLine[1]) {
 
 			username := string(splitLine[0])
 			password := string(splitLine[1])
 
-			if utf8.ValidString(username) && utf8.ValidString(password) && hashesMap["MD5"].Match([]byte(password)) {
-				lineCount++
-				_, err = md5Statement.Exec(username, password)
-
-				if lineCount%int64(copySize) == 0 {
-
-					_, err = clearStatement.Exec()
-					if err != nil {
-						log.Fatal("Failed at stmt.Exec", err)
-					}
-
-					err = md5Statement.Close()
-					if err != nil {
-						log.Fatal("Failed at stmt.Close", err)
-					}
-
-					err = txnMD5.Commit()
-					if err != nil {
-						log.Fatal("failed at txn.Commit", err)
-					}
-
-					txnMD5, err = db.Begin()
-					if err != nil {
-						log.Fatal("failed at db.Begin", err)
-					}
-
-					md5Statement, err = txnMD5.Prepare(pq.CopyIn("md5", "username", "password"))
-					if err != nil {
-						log.Fatal("failed at txn.Prepare", err)
-					}
-
-					if lineCount%(int64(copySize)*10) == 0 {
-						log.Printf("Inserted %v lines", lineCount)
-					}
-				}
-
-				if err != nil {
-					log.Print([]byte(line))
-					log.Println(line)
-					log.Println("error:", splitLine[0], splitLine[1])
-					log.Fatal(err)
-				}
-
-			} else if utf8.ValidString(username) && utf8.ValidString(password) && hashesMap["SHA1"].Match([]byte(password)) {
-				lineCount++
-				_, err = sha1Statement.Exec(username, password)
-
-				if lineCount%int64(copySize) == 0 {
-
-					_, err = sha1Statement.Exec()
-					if err != nil {
-						log.Fatal("Failed at stmt.Exec", err)
-					}
-
-					err = sha1Statement.Close()
-					if err != nil {
-						log.Fatal("Failed at stmt.Close", err)
-					}
-
-					err = txnSHA1.Commit()
-					if err != nil {
-						log.Fatal("failed at txn.Commit", err)
-					}
-
-					txnSHA1, err = db.Begin()
-					if err != nil {
-						log.Fatal("failed at db.Begin", err)
-					}
-
-					sha1Statement, err = txnSHA1.Prepare(pq.CopyIn("sha1", "username", "password"))
-					if err != nil {
-						log.Fatal("failed at txn.Prepare", err)
-					}
-
-					if lineCount%(int64(copySize)*10) == 0 {
-						log.Printf("Inserted %v lines", lineCount)
-					}
-				}
-
-				if err != nil {
-					log.Print([]byte(line))
-					log.Println(line)
-					log.Println("error:", splitLine[0], splitLine[1])
-					log.Fatal(err)
-				}
-
-			} else if utf8.ValidString(username) && utf8.ValidString(password) {
-				lineCount++
-				_, err = clearStatement.Exec(username, password)
-
-				if lineCount%int64(copySize) == 0 {
-
-					_, err = clearStatement.Exec()
-					if err != nil {
-						log.Fatal("Failed at stmt.Exec", err)
-					}
-
-					err = clearStatement.Close()
-					if err != nil {
-						log.Fatal("Failed at stmt.Close", err)
-					}
-
-					err = txnClear.Commit()
-					if err != nil {
-						log.Fatal("failed at txn.Commit", err)
-					}
-
-					txnClear, err = db.Begin()
-					if err != nil {
-						log.Fatal("failed at db.Begin", err)
-					}
-
-					clearStatement, err = txnClear.Prepare(pq.CopyIn("clear", "username", "password"))
-					if err != nil {
-						log.Fatal("failed at txn.Prepare", err)
-					}
-
-					if lineCount%(int64(copySize)*10) == 0 {
-						log.Printf("Inserted %v lines", lineCount)
-					}
-				}
-
-				if err != nil {
-					log.Print([]byte(line))
-					log.Println(line)
-					log.Println("error:", splitLine[0], splitLine[1])
-					log.Fatal(err)
-				}
+			if hashesMap["MD5"].Match([]byte(password)) {
+				insertToDb(&lineCount, copySize, md5Statement, txnMD5, db, username, password)
+			} else if hashesMap["SHA1"].Match([]byte(password)) {
+				insertToDb(&lineCount, copySize, sha1Statement, txnMD5, db, username, password)
 			} else {
-				log.Println("WELL FUCK")
+				insertToDb(&lineCount, copySize, clearStatement, txnMD5, db, username, password)
 			}
-
 		}
 
 		if !more {
-			_, err = clearStatement.Exec()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = clearStatement.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = txnClear.Commit()
-			if err != nil {
-				log.Println(err)
-			}
-
-			_, err = md5Statement.Exec()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = md5Statement.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = txnMD5.Commit()
-			if err != nil {
-				log.Println(err)
-			}
-
-			_, err = sha1Statement.Exec()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = sha1Statement.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = txnSHA1.Commit()
-			if err != nil {
-				log.Println(err)
-			}
+			closeAllDbConnections(stmtMap, txnMap)
 
 			log.Printf("Inserted %v lines", lineCount)
 			break
 		}
 	}
 	stopToolChannel <- true
+}
+
+func insertToDb(lineCount *int64, copySize int, statement *sql.Stmt, txn *sql.Tx, db *sql.DB, username string, password string) {
+	*lineCount++
+	_, err := statement.Exec(username, password)
+	log.Println(*lineCount)
+
+	if *lineCount%int64(copySize) == 0 {
+
+		_, err = statement.Exec()
+		if err != nil {
+			log.Fatal("Failed at stmt.Exec", err)
+		}
+
+		err = statement.Close()
+		if err != nil {
+			log.Fatal("Failed at stmt.Close", err)
+		}
+
+		err = txn.Commit()
+		if err != nil {
+			log.Fatal("failed at txn.Commit", err)
+		}
+
+		log.Println("Got here")
+
+		txn, err = db.Begin()
+		if err != nil {
+			log.Fatal("failed at db.Begin", err)
+		}
+
+		if *lineCount%(int64(copySize)*10) == 0 {
+			log.Printf("Inserted %v lines", lineCount)
+		}
+	}
+
+	if err != nil {
+		log.Fatal(err, "source:", username, password)
+	}
+}
+
+func closeAllDbConnections(stmtMap map[string]*sql.Stmt, txnMap map[string]*sql.Tx) {
+	for k, v := range stmtMap {
+		log.Printf("Closing %s Statement", k)
+		_, err := v.Exec()
+		err = v.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	for k, v := range txnMap {
+		log.Printf("Closing %s Tx", k)
+		err := v.Commit()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 }
 
 func checkConnectionAndCreateTables(db *sql.DB) {
