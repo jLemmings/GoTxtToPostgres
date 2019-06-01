@@ -201,7 +201,7 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 
 	for {
 		line, more := <-lineChannel
-
+		strings.Replace(line, "\u0000", "", -1)
 		splitLine := strings.SplitN(line, ":", 2)
 
 		if len(splitLine) == 2 {
@@ -209,7 +209,7 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 			username := string(splitLine[0])
 			password := string(splitLine[1])
 
-			if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) && hashesMap["MD5"].Match([]byte(password)) {
+			if utf8.ValidString(username) && utf8.ValidString(password) && hashesMap["MD5"].Match([]byte(password)) {
 				lineCount++
 				_, err = md5Statement.Exec(username, password)
 
@@ -252,7 +252,7 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 					log.Fatal(err)
 				}
 
-			} else if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) && hashesMap["SHA1"].Match([]byte(password)) {
+			} else if utf8.ValidString(username) && utf8.ValidString(password) && hashesMap["SHA1"].Match([]byte(password)) {
 				lineCount++
 				_, err = sha1Statement.Exec(username, password)
 
@@ -295,7 +295,7 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 					log.Fatal(err)
 				}
 
-			} else if utf8.Valid([]byte(username)) && utf8.Valid([]byte(password)) {
+			} else if utf8.ValidString(username) && utf8.ValidString(password) {
 				lineCount++
 				_, err = clearStatement.Exec(username, password)
 
