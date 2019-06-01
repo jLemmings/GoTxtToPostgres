@@ -218,9 +218,6 @@ func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolC
 		strings.Replace(line, "\u0000", "", -1)
 		splitLine := strings.SplitN(line, ":", 2)
 
-		log.Println("GOT HERE")
-
-
 		if len(splitLine) == 2 && utf8.ValidString(splitLine[0]) && utf8.ValidString(splitLine[1]) {
 
 			username := string(splitLine[0])
@@ -266,8 +263,6 @@ func insertToDb(lineCount *int64, copySize int, statement *sql.Stmt, txn *sql.Tx
 		if err != nil {
 			log.Fatal("failed at txn.Commit", err)
 		}
-
-		log.Println("Got here")
 
 		txn, err = db.Begin()
 		if err != nil {
