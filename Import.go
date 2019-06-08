@@ -3,8 +3,9 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"github.com/gorilla/mux"
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,6 +17,19 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+)
+
+type credential struct {
+	username      string
+	clearPassword string
+	md5Password   string
+	sha1Password  string
+}
+
+var (
+	query               string
+	err                 error
+	table				string
 )
 
 func main() {
@@ -38,13 +52,13 @@ func main() {
 
 	var hashesMap map[string]*regexp.Regexp
 	hashesMap = make(map[string]*regexp.Regexp)
-
+  
 	hashesMap["MD5"] = md5Regex
 	hashesMap["SHA1"] = sha1Regex
 
 	var wg = sync.WaitGroup{}
 
-	lineChannel := make(chan string, 1000)
+	credChannel := make(chan credential, 1000)
 	filePathChannel := make(chan string, *concurrency*4)
 	stopToolChannel := make(chan bool, 1)
 	stopFileWalkChannel := make(chan bool, 1)
@@ -74,6 +88,7 @@ func main() {
 	connStr := "host=" + *dbHost + " user=" + *dbUser + " dbname=" + *dbName + " password=" + *dbPassword + " sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
+		log.Println("Failed")
 		log.Fatal(err)
 	}
 	checkConnectionAndCreateTables(db)
@@ -98,11 +113,11 @@ func main() {
 		})
 
 	go fileWalk(input, filePathChannel, stopFileWalkChannel)
-	go textToPostgres(lineChannel, *copySize, db, stopToolChannel, hashesMap)
+	go textToPostgres(credChannel, *copySize, db, stopToolChannel)
 
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
-		go readFile(filePathChannel, compiledRegex, lineChannel, numberOfTxtFiles, &numberOfProcessedFiles, &wg)
+		go readFile(filePathChannel, compiledRegex, credChannel, numberOfTxtFiles, &numberOfProcessedFiles, &wg, hashesMap)
 	}
 
 	log.Println("Waiting to close Filepath Channel")
@@ -113,12 +128,12 @@ func main() {
 	log.Println("WAITING")
 	wg.Wait()
 	log.Println("CLOSING LINE CHANNEL")
-	close(lineChannel)
+	close(credChannel)
 
 	<-stopToolChannel
 }
 
-func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChannel chan string, numberOfTxtFiles int, numberOfProcessedFiles *int, wg *sync.WaitGroup) {
+func readFile(filePathChannel chan string, delimiters *regexp.Regexp, credChannel chan credential, numberOfTxtFiles int, numberOfProcessedFiles *int, wg *sync.WaitGroup, hashesMap map[string]*regexp.Regexp) {
 	for {
 		time.Sleep(5 * time.Second)
 		path, morePaths := <-filePathChannel
@@ -134,8 +149,26 @@ func readFile(filePathChannel chan string, delimiters *regexp.Regexp, lineChanne
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
 				if line != "" {
+					strings.Replace(line, "\u0000", "", -1)
 					insert := delimiters.ReplaceAllString(line, "${1}:$2")
-					lineChannel <- insert
+					splitLine := strings.SplitN(insert, ":", 2)
+
+					credentialForChan := credential{}
+
+					if len(splitLine) == 2 && utf8.ValidString(splitLine[0]) && utf8.ValidString(splitLine[1]) {
+
+						username := string(splitLine[0])
+						password := string(splitLine[1])
+
+						if hashesMap["MD5"].Match([]byte(password)) {
+							credentialForChan = credential{username: username, md5Password: password}
+						} else if hashesMap["SHA1"].Match([]byte(password)) {
+							credentialForChan = credential{username: username, sha1Password: password}
+						} else {
+							credentialForChan = credential{username: username, clearPassword: password}
+						}
+					}
+					credChannel <- credentialForChan
 				}
 			}
 
@@ -171,131 +204,54 @@ func fileWalk(dataSource *string, filePathChannel chan string, stopFileWalkChann
 	stopFileWalkChannel <- true
 }
 
-func textToPostgres(lineChannel chan string, copySize int, db *sql.DB, stopToolChannel chan bool, hashesMap map[string]*regexp.Regexp) {
+func textToPostgres(credChannel chan credential, copySize int, db *sql.DB, stopToolChannel chan bool) {
+	defer func() {
+		err = db.Close()
+		handleErr(err)
+
+		stopToolChannel <- true
+	}()
 
 	log.Println("Started Text to postgres goroutine")
 	var lineCount int64 = 0
 
-	txnClear, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	txnMD5, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	txnSHA1, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var txnMap map[string]*sql.Tx
-	txnMap = make(map[string]*sql.Tx)
-
-	txnMap["clear"] = txnClear
-	txnMap["md5"] = txnMD5
-	txnMap["sha1"] = txnSHA1
-
-	clearStatement, err := txnClear.Prepare(pq.CopyIn("clear", "username", "password"))
-	md5Statement, err := txnMD5.Prepare(pq.CopyIn("md5", "username", "password"))
-	sha1Statement, err := txnSHA1.Prepare(pq.CopyIn("sha1", "username", "password"))
-
-	var stmtMap map[string]*sql.Stmt
-	stmtMap = make(map[string]*sql.Stmt)
-
-	stmtMap["clear"] = clearStatement
-	stmtMap["md5"] = md5Statement
-	stmtMap["sha1"] = sha1Statement
-
-	if err != nil {
-		log.Fatal(err)
-	}
+	print(query)
 
 	for {
-		line, more := <-lineChannel
-		strings.Replace(line, "\u0000", "", -1)
-		splitLine := strings.SplitN(line, ":", 2)
-
-		if len(splitLine) == 2 && utf8.ValidString(splitLine[0]) && utf8.ValidString(splitLine[1]) {
-
-			username := string(splitLine[0])
-			password := string(splitLine[1])
-
-			if hashesMap["MD5"].Match([]byte(password)) {
-				insertToDb(&lineCount, copySize, md5Statement, txnMD5, db, username, password)
-			} else if hashesMap["SHA1"].Match([]byte(password)) {
-				insertToDb(&lineCount, copySize, sha1Statement, txnMD5, db, username, password)
-			} else {
-				insertToDb(&lineCount, copySize, clearStatement, txnMD5, db, username, password)
-			}
-		}
+		credentialToInsert, more := <-credChannel
 
 		if !more {
-			closeAllDbConnections(stmtMap, txnMap)
-
 			log.Printf("Inserted %v lines", lineCount)
 			break
 		}
-	}
-	stopToolChannel <- true
-}
 
-func insertToDb(lineCount *int64, copySize int, statement *sql.Stmt, txn *sql.Tx, db *sql.DB, username string, password string) {
-	*lineCount++
-	_, err := statement.Exec(username, password)
-	log.Println(*lineCount)
+		var password string
 
-	if *lineCount%int64(copySize) == 0 {
-
-		_, err = statement.Exec()
-		if err != nil {
-			log.Fatal("Failed at stmt.Exec", err)
+		switch {
+		case credentialToInsert.clearPassword != "":
+			table = "clear"
+			password = credentialToInsert.clearPassword
+		case credentialToInsert.sha1Password != "":
+			table = "sha1"
+			password = credentialToInsert.sha1Password
+		case credentialToInsert.md5Password != "":
+			table = "md5"
+			password = credentialToInsert.md5Password
 		}
 
-		err = statement.Close()
-		if err != nil {
-			log.Fatal("Failed at stmt.Close", err)
-		}
 
-		err = txn.Commit()
-		if err != nil {
-			log.Fatal("failed at txn.Commit", err)
-		}
+		_, err = db.Exec(fmt.Sprintf("INSERT INTO %s VALUES ($1, $2)", table), credentialToInsert.username, password)
 
-		txn, err = db.Begin()
-		if err != nil {
-			log.Fatal("failed at db.Begin", err)
-		}
+		handleErr(err)
 
-		if *lineCount%(int64(copySize)*10) == 0 {
+		lineCount++
+
+		if lineCount%int64(copySize*10) == 0 {
+
 			log.Printf("Inserted %v lines", lineCount)
+
 		}
 	}
-
-	if err != nil {
-		log.Fatal(err, "source:", username, password)
-	}
-}
-
-func closeAllDbConnections(stmtMap map[string]*sql.Stmt, txnMap map[string]*sql.Tx) {
-	for k, v := range stmtMap {
-		log.Printf("Closing %s Statement", k)
-		_, err := v.Exec()
-		err = v.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	for k, v := range txnMap {
-		log.Printf("Closing %s Tx", k)
-		err := v.Commit()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
 }
 
 func checkConnectionAndCreateTables(db *sql.DB) {
@@ -321,6 +277,12 @@ func checkConnectionAndCreateTables(db *sql.DB) {
 	_, errSHA1 := db.Exec(querySHA1)
 	if errSHA1 != nil {
 		log.Fatal("Failed to create table if exists")
+	}
+}
+
+func handleErr(err error) {
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
